@@ -35,10 +35,9 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        // OpenRouter automatically tries each model in sequence if the primary is offline
+        // Maximum 3 models allowed in fallback array
         models: [
           'meta-llama/llama-3.3-70b-instruct:free',
-          'deepseek/deepseek-r1:free',
           'qwen/qwen-2.5-coder-32b-instruct:free',
           'mistralai/mistral-7b-instruct:free'
         ],

@@ -1,27 +1,39 @@
 const SYSTEM_PROMPT = `You are a warm, emotionally attuned companion inside "Sanctuary" — a quiet space where people can talk about how they feel.
 
-For EVERY user message, you must first silently decide which of two modes fits, then respond in that exact format.
+For EVERY user message, decide which of two modes fits, then respond with that mode and content.
 
-—— MODE 1: TALK ——
+—— MODE "chat" ——
 Use this when the user is just chatting, greeting you, asking a question about you, clarifying something, or the message is too short/vague to build a meaningful experience from (e.g. "hi", "who are you", "thanks", "what can you do", "ok", "hmm").
-Output format (exactly):
-MODE: chat
-<a short, warm, natural reply in plain English text — no HTML, no markdown, 1-4 sentences>
+content = a short, warm, natural reply in plain English text — no HTML, no markdown, 1-4 sentences.
 
-—— MODE 2: EXPERIENCE ——
+—— MODE "experience" ——
 Use this when the user expresses a real feeling, mood, wish, memory, or explicitly asks you to build/make something (e.g. "I feel overwhelmed today", "I miss the ocean", "make me a 2048 game", "I need a quiet place to breathe").
-Output format (exactly):
-MODE: experience
-<then a single-file, beautifully responsive, interactive HTML/CSS/JS page — pure runnable HTML only, no markdown fences>
+content = a single-file, beautifully responsive, interactive HTML/CSS/JS page as a raw string — pure runnable HTML only, no markdown fences, no escaped-looking wrapper beyond normal JSON string escaping.
 
-STRICT RULES FOR EXPERIENCE MODE:
+STRICT RULES FOR "experience" CONTENT:
 1. Soft, modern, aesthetically pleasing design using Tailwind CDN (<script src="https://cdn.tailwindcss.com"></script>).
 2. All in-page text must be in ENGLISH.
 3. Include genuine interactivity (clickable animations, taps, drags, a mini game, or an interactive breather/wish jar).
 4. If the user asks for a specific interactive game (e.g. 2048, tic-tac-toe), the game logic MUST actually work: keyboard AND on-screen/touch controls both required (never rely on keydown alone), and the full script must be complete and syntactically valid — do not truncate.
 5. Never wrap in markdown fences.
 
-CRITICAL: Always start your response with the literal line "MODE: chat" or "MODE: experience" as the very first line, nothing before it, then a newline.`;
+Use conversation history for context — if the user says "make it gentler" or "again but blue", refer back to what was discussed before.`;
+
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    mode: {
+      type: "STRING",
+      enum: ["chat", "experience"]
+    },
+    content: {
+      type: "STRING",
+      description: "The reply text (chat mode) or full HTML page source (experience mode)"
+    }
+  },
+  required: ["mode", "content"],
+  propertyOrdering: ["mode", "content"]
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -33,23 +45,35 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
   }
 
-  const { prompt } = req.body || {};
+  const { prompt, history } = req.body || {};
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
+  // history: 前端传来的过往对话，格式 [{ role: 'user'|'model', text: '...' }]
+  // 只把纯文字内容带上，不把生成的整段HTML也塞进上下文（省token，也避免模型模仿旧代码）
+  const contents = [
+    ...(Array.isArray(history) ? history.map(h => ({
+      role: h.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: h.text }]
+    })) : []),
+    { role: 'user', parts: [{ text: prompt }] }
+  ];
+
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:streamGenerateContent?alt=sse&key=${apiKey.trim()}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey.trim()}`;
 
     const apiRes = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents,
         generationConfig: {
           temperature: 0.8,
-          maxOutputTokens: 16384
+          maxOutputTokens: 16384,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA
         }
       })
     });
@@ -62,71 +86,47 @@ export default async function handler(req, res) {
       });
     }
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Transfer-Encoding', 'chunked');
+    const data = await apiRes.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    const reader = apiRes.body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = '';
-    let fullText = '';
-    let headerSent = false;
+    if (!rawText) {
+      console.error('Empty response from Gemini:', JSON.stringify(data));
+      const finishReason = data.candidates?.[0]?.finishReason;
+      return res.status(502).json({
+        error: finishReason === 'SAFETY'
+          ? 'The response was blocked by safety filters. Try rephrasing.'
+          : 'Gemini returned an empty response.'
+      });
+    }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (e) {
+      console.error('Failed to parse structured JSON from Gemini:', rawText);
+      return res.status(502).json({ error: 'Received malformed structured output from the model.' });
+    }
 
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop();
+    if (!parsed.mode || !parsed.content) {
+      console.error('Structured output missing fields:', parsed);
+      return res.status(502).json({ error: 'Model response was missing required fields.' });
+    }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const jsonStr = trimmed.slice(5).trim();
-        if (!jsonStr) continue;
-
-        let textPiece;
-        try {
-          const parsed = JSON.parse(jsonStr);
-          textPiece = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-        } catch (e) {
-          continue;
-        }
-        if (!textPiece) continue;
-
-        fullText += textPiece;
-
-        if (!headerSent) {
-          const newlineIdx = fullText.indexOf('\n');
-          if (newlineIdx === -1) continue; // 第一行（MODE行）还没攒完
-
-          const firstLine = fullText.slice(0, newlineIdx).trim();
-          const rest = fullText.slice(newlineIdx + 1);
-          const mode = firstLine.toLowerCase().includes('experience') ? 'experience' : 'chat';
-
-          headerSent = true;
-          res.write(JSON.stringify({ type: mode }) + '\n---STREAM---\n');
-          if (rest) res.write(rest);
-        } else {
-          res.write(textPiece);
-        }
+    let content = parsed.content;
+    if (parsed.mode === 'experience') {
+      content = content.trim();
+      if (content.startsWith('```')) {
+        content = content.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
       }
     }
 
-    if (!headerSent) {
-      // 流结束都没凑出MODE行，兜底当聊天处理
-      res.write(JSON.stringify({ type: 'chat' }) + '\n---STREAM---\n');
-      res.write(fullText || "I'm here — could you tell me a bit more about how you're feeling?");
-    }
-
-    return res.end();
+    return res.status(200).json({
+      mode: parsed.mode,
+      content
+    });
 
   } catch (error) {
     console.error('Generation Error:', error);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: error.message || 'Generation failed.' });
-    }
-    res.end();
+    return res.status(500).json({ error: error.message || 'Generation failed.' });
   }
 }

@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY;
 
   if (!apiKey || !apiKey.trim()) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
@@ -26,10 +26,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // 调用 Google 官方 Gemini 2.0 Flash REST 接口
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`;
+    // 锁定 Google 官方稳定版 v1 接口与 gemini-1.5-flash 模型
+    const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
 
-    const apiRes = await fetch(url, {
+    const apiRes = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -45,8 +45,8 @@ export default async function handler(req, res) {
           }
         ],
         generationConfig: {
-          maxOutputTokens: 4000,
-          temperature: 0.7
+          temperature: 0.7,
+          maxOutputTokens: 8192
         }
       })
     });
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
       .trim();
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.status(200).send(cleanedHtml);
+    return res.status(200).send(cleanedHtml);
 
   } catch (error) {
     console.error('Generation Error:', error);

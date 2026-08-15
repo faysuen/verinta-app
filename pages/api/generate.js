@@ -1,7 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
 const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-game/micro-app creator.
 The user will give you a single phrase expressing their feeling, need, or idea.
 Your goal is to instantly design and write a single-file, highly interactive HTML/CSS/JS micro-app or mini-game based on their deep intent.
@@ -22,7 +18,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
   }
 
@@ -30,25 +27,40 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用动态最新别名，避免写死版本导致 404 报错
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    // 直接调用 Google 官方 REST API（原生稳定，不依赖 SDK）
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const result = await model.generateContent([
-      SYSTEM_PROMPT,
-      `User request: ${prompt}`
-    ]);
+    const apiRes = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }
+            ]
+          }
+        ]
+      })
+    });
 
-    const response = await result.response;
-    let code = response.text() || '';
+    const data = await apiRes.json();
+
+    if (!apiRes.ok) {
+      throw new Error(data.error?.message || `API error: ${apiRes.status}`);
+    }
+
+    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     code = code.trim();
-    
+
+    // 清理 Markdown 标记
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini API Error:', error);
+    console.error('Gemini API Direct Fetch Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

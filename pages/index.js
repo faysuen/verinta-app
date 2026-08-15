@@ -4,7 +4,7 @@ export default function Home() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hey there! I'm your AI Micro-App Studio. Tell me what you'd like to build today (e.g., 'A pomodoro timer with ambient sounds' or 'A classic 2048 mini-game')",
+      content: "Hi, I'm here with you. 🌿 Tell me how you're feeling right now — even a single word is enough. (e.g. \"I feel overwhelmed today\", \"I miss the ocean\", \"I just need a quiet place to breathe\")",
       html: null
     }
   ]);
@@ -26,11 +26,10 @@ export default function Home() {
     const userText = input.trim();
     setInput('');
 
-    // Append user message & temporary AI loading placeholder
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: userText, html: null },
-      { role: 'assistant', content: '⚡ Generating your app in real-time...', html: '' }
+      { role: 'assistant', content: '🌙 Taking a breath and creating something for you...', html: '' }
     ]);
     setLoading(true);
 
@@ -43,7 +42,7 @@ export default function Home() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Generation failed.');
+        throw new Error(errorData.error || 'Something went wrong while creating your space.');
       }
 
       const reader = res.body.getReader();
@@ -57,19 +56,17 @@ export default function Home() {
         const chunk = decoder.decode(value, { stream: true });
         fullCode += chunk;
 
-        // Clean potential markdown blocks on the fly
         let cleanCode = fullCode.trim();
         if (cleanCode.startsWith('```')) {
           cleanCode = cleanCode.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
         }
 
-        // Live update the last message with received code
         setMessages((prev) => {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
           updated[lastIdx] = {
             role: 'assistant',
-            content: 'Here is your micro-app:',
+            content: 'I made this little space for you 💛',
             html: cleanCode
           };
           return updated;
@@ -81,7 +78,7 @@ export default function Home() {
         const lastIdx = updated.length - 1;
         updated[lastIdx] = {
           role: 'assistant',
-          content: `Error: ${err.message}`,
+          content: `I'm sorry, something didn't go as planned: ${err.message}`,
           html: null
         };
         return updated;
@@ -94,10 +91,10 @@ export default function Home() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <div style={styles.avatar}>✦</div>
+        <div style={styles.avatar}>🌸</div>
         <div>
-          <h1 style={styles.title}>AI Micro App Studio</h1>
-          <p style={styles.status}>● Online & Streaming Ready</p>
+          <h1 style={styles.title}>Sanctuary</h1>
+          <p style={styles.status}>A quiet space, made just for how you feel</p>
         </div>
       </header>
 
@@ -138,7 +135,7 @@ export default function Home() {
         <div style={styles.inputContainer}>
           <textarea
             style={styles.textarea}
-            placeholder="Type your micro-app idea here... (Press Enter to send)"
+            placeholder="How are you feeling right now? (Press Enter to share)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -157,7 +154,7 @@ export default function Home() {
               opacity: loading || !input.trim() ? 0.4 : 1
             }}
           >
-            Send →
+            Share →
           </button>
         </div>
       </footer>
@@ -170,39 +167,40 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     height: '100vh',
-    backgroundColor: '#0a0a0a',
-    color: '#ededed',
+    background: 'linear-gradient(160deg, #fdf6f0 0%, #f3e8ff 50%, #e0f2ff 100%)',
+    color: '#3f3a4b',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '16px 24px',
-    borderBottom: '1px solid #222222',
-    backgroundColor: '#000000',
+    gap: '14px',
+    padding: '18px 24px',
+    borderBottom: '1px solid rgba(0,0,0,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    backdropFilter: 'blur(8px)',
   },
   avatar: {
-    width: '36px',
-    height: '36px',
+    width: '40px',
+    height: '40px',
     borderRadius: '50%',
     backgroundColor: '#ffffff',
-    color: '#000000',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontWeight: 'bold',
-    fontSize: '18px',
+    fontSize: '20px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
   },
   title: {
-    fontSize: '16px',
-    fontWeight: '700',
+    fontSize: '17px',
+    fontWeight: '600',
     margin: 0,
-    letterSpacing: '0.5px',
+    color: '#4a3f5c',
+    letterSpacing: '0.3px',
   },
   status: {
-    fontSize: '12px',
-    color: '#10b981',
+    fontSize: '12.5px',
+    color: '#8a7ea3',
     margin: 0,
   },
   chatBox: {
@@ -223,22 +221,24 @@ const styles = {
   },
   bubble: {
     maxWidth: '85%',
-    borderRadius: '16px',
+    borderRadius: '18px',
     padding: '14px 18px',
-    lineHeight: '1.5',
+    lineHeight: '1.6',
     fontSize: '15px',
   },
   userBubble: {
     backgroundColor: '#ffffff',
-    color: '#000000',
+    color: '#4a3f5c',
     borderBottomRightRadius: '4px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   aiBubble: {
-    backgroundColor: '#161616',
-    color: '#ededed',
-    border: '1px solid #262626',
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    color: '#4a3f5c',
+    border: '1px solid rgba(255,255,255,0.8)',
     borderBottomLeftRadius: '4px',
     width: '100%',
+    backdropFilter: 'blur(6px)',
   },
   msgText: {
     margin: 0,
@@ -246,10 +246,11 @@ const styles = {
   },
   previewCard: {
     marginTop: '14px',
-    borderRadius: '10px',
+    borderRadius: '14px',
     overflow: 'hidden',
-    border: '1px solid #333333',
+    border: '1px solid rgba(0,0,0,0.06)',
     backgroundColor: '#ffffff',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
   },
   iframe: {
     width: '100%',
@@ -257,9 +258,10 @@ const styles = {
     border: 'none',
   },
   inputArea: {
-    padding: '16px 24px',
-    borderTop: '1px solid #222222',
-    backgroundColor: '#000000',
+    padding: '18px 24px',
+    borderTop: '1px solid rgba(0,0,0,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    backdropFilter: 'blur(8px)',
   },
   inputContainer: {
     maxWidth: '900px',
@@ -267,27 +269,28 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    backgroundColor: '#161616',
-    border: '1px solid #2a2a2a',
-    borderRadius: '12px',
-    padding: '8px 12px',
+    backgroundColor: '#ffffff',
+    border: '1px solid rgba(0,0,0,0.06)',
+    borderRadius: '16px',
+    padding: '10px 14px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
   },
   textarea: {
     flex: 1,
     backgroundColor: 'transparent',
     border: 'none',
     outline: 'none',
-    color: '#ffffff',
+    color: '#4a3f5c',
     fontSize: '15px',
     resize: 'none',
     fontFamily: 'inherit',
   },
   sendBtn: {
-    backgroundColor: '#ffffff',
-    color: '#000000',
+    background: 'linear-gradient(135deg, #f5b7c4, #c8a2e0)',
+    color: '#ffffff',
     border: 'none',
-    borderRadius: '8px',
-    padding: '8px 16px',
+    borderRadius: '10px',
+    padding: '9px 18px',
     fontWeight: '600',
     fontSize: '14px',
     cursor: 'pointer',

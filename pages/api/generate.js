@@ -11,14 +11,17 @@ Your goal is to instantly design and write a single-file, highly interactive HTM
 2. All UI, text, and labels inside the generated micro-app MUST be in ENGLISH.
 3. Make the design modern, polished, and aesthetic (Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>).
 4. All interactions MUST be fully functional (e.g., fluid click feedbacks, drag-and-drop, canvas animations, random generators, sound/visual effects).
-5. DO NOT wrap code in markdown fences (e.g., NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.`;
+5. DO NOT wrap code in markdown fences (e.g., NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.
+
+【UNRELATED PROMPT HANDLING】:
+If the user's prompt is unrelated to stress relief, decision making, or is a general knowledge question (e.g., "Capital of France?", "Write a poem"):
+Do NOT give a text response. Instead, create a fun, interactive 'Knowledge Card' or 'Text Tool' (e.g., a flip card with the answer, or a simple text editor with copy/paste buttons). ALWAYS return a functional UI.`;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 1. 检查环境变量是否存在
   if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
   }
@@ -27,7 +30,8 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // 使用官方稳定兼容的模型别名
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
 
     const result = await model.generateContent([
       SYSTEM_PROMPT,
@@ -38,6 +42,7 @@ export default async function handler(req, res) {
     let code = response.text() || '';
     code = code.trim();
     
+    // 清理可能包含的 Markdown 代码块标签
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }
@@ -45,7 +50,6 @@ export default async function handler(req, res) {
     res.status(200).json({ html: code });
   } catch (error) {
     console.error('Gemini API Error:', error);
-    // 返回真实的错误信息给前端弹窗
-    res.status(500).json({ error: error.message || 'Generation failed.' });
+    res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

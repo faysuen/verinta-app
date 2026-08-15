@@ -27,26 +27,28 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 官方推荐的 Interactions API 端点
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`;
+    // 直接使用标准的 v1beta generateContent 端点
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const apiRes = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        agent: 'gemini-flash',
-        input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
+        contents: [
+          {
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
+          }
+        ]
       })
     });
 
     const data = await apiRes.json();
 
     if (!apiRes.ok) {
-      throw new Error(data.error?.message || `API error: ${apiRes.status}`);
+      throw new Error(data.error?.message || `API Error: ${apiRes.status}`);
     }
 
-    // 解析 Interactions API 返回的结构
-    let code = data.output || data.outputs?.[0]?.text || (Array.isArray(data.candidates) ? data.candidates[0]?.content?.parts?.[0]?.text : '') || '';
+    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     code = code.trim();
 
     if (code.startsWith('```')) {
@@ -55,7 +57,7 @@ export default async function handler(req, res) {
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini Interactions API Error:', error);
+    console.error('Gemini API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

@@ -18,12 +18,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 兼容读取 OPENROUTER_API_KEY 或 GEMINI_API_KEY
+  // 读取环境变量中的 Key (优先 OPENROUTER_API_KEY，后备 GEMINI_API_KEY)
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
     return res.status(500).json({ 
-      error: 'API Key is missing. Please set OPENROUTER_API_KEY (or GEMINI_API_KEY) in Vercel Environment Variables.' 
+      error: 'API Key is missing. Please set OPENROUTER_API_KEY in Vercel Environment Variables.' 
     });
   }
 
@@ -31,17 +31,17 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 调用 OpenRouter 标准 API
+    // 调用 OpenRouter API，使用最新的模型标识 google/gemini-flash-latest
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://vercel.com', // OpenRouter 建议带上的来源标识
+        'HTTP-Referer': 'https://vercel.com',
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-001',
+        model: 'google/gemini-flash-latest',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: prompt }
@@ -58,6 +58,7 @@ export default async function handler(req, res) {
     let code = data.choices?.[0]?.message?.content || '';
     code = code.trim();
 
+    // 自动剥离可能的 Markdown 标记
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }

@@ -27,35 +27,55 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 直接使用标准的 v1beta generateContent 端点
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // 按优先级轮询所有可能允许的模型名称
+    const candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-pro'
+    ];
 
-    const apiRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
+    let lastErrorMessage = '';
+
+    for (const model of candidateModels) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        const apiRes = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
+              }
+            ]
+          })
+        });
+
+        const data = await apiRes.json();
+
+        if (apiRes.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          let code = data.candidates[0].content.parts[0].text.trim();
+
+          if (code.startsWith('```')) {
+            code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
           }
-        ]
-      })
-    });
 
-    const data = await apiRes.json();
-
-    if (!apiRes.ok) {
-      throw new Error(data.error?.message || `API Error: ${apiRes.status}`);
+          // 只要有一个模型响应成功，直接返回结果并退出循环
+          return res.status(200).json({ html: code });
+        } else {
+          lastErrorMessage = data.error?.message || `Model ${model} returned status ${apiRes.status}`;
+        }
+      } catch (e) {
+        lastErrorMessage = e.message;
+      }
     }
 
-    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    code = code.trim();
+    // 如果所有轮询都失败，抛出最后一个错误
+    throw new Error(`所有可用模型尝试均失败。最后一次报错信息: ${lastErrorMessage}`);
 
-    if (code.startsWith('```')) {
-      code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
-    }
-
-    res.status(200).json({ html: code });
   } catch (error) {
     console.error('Gemini API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });

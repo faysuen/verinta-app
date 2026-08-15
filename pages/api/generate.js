@@ -30,8 +30,8 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用官方稳定兼容的模型别名
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    // 使用当前 API 支持的标准模型名称
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     const result = await model.generateContent([
       SYSTEM_PROMPT,
@@ -42,7 +42,6 @@ export default async function handler(req, res) {
     let code = response.text() || '';
     code = code.trim();
     
-    // 清理可能包含的 Markdown 代码块标签
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }

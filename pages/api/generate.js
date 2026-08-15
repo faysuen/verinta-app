@@ -27,32 +27,45 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // Official standard REST endpoint with explicit model parameter in body
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`;
+    // 备选模型列表（优先尝试 gemini-2.0-flash，如果报错自动切换到 standard 模型）
+    const candidateModels = ['models/gemini-2.0-flash', 'models/gemini-1.5-flash'];
+    let lastError = null;
 
-    const apiRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gemini-2.5-flash',
-        input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
-      })
-    });
+    for (const modelName of candidateModels) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`;
 
-    const data = await apiRes.json();
+        const apiRes = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent: {
+              model: modelName
+            },
+            input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
+          })
+        });
 
-    if (!apiRes.ok) {
-      throw new Error(data.error?.message || `API error: ${apiRes.status}`);
+        const data = await apiRes.json();
+
+        if (apiRes.ok) {
+          let code = data.output || data.outputs?.[0]?.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          code = code.trim();
+
+          if (code.startsWith('```')) {
+            code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
+          }
+
+          return res.status(200).json({ html: code });
+        } else {
+          lastError = data.error?.message || `API Error: ${apiRes.status}`;
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
     }
 
-    let code = data.output || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    code = code.trim();
-
-    if (code.startsWith('```')) {
-      code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
-    }
-
-    res.status(200).json({ html: code });
+    throw new Error(lastError || 'All model endpoints failed.');
   } catch (error) {
     console.error('Gemini API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });

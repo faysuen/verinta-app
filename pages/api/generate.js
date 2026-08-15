@@ -27,8 +27,8 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 直接调用 Google 官方 REST API（原生稳定，不依赖 SDK）
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // 使用当前最新的 gemini-2.5-flash 模型
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const apiRes = await fetch(apiUrl, {
       method: 'POST',
@@ -36,9 +36,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         contents: [
           {
-            parts: [
-              { text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }
-            ]
+            role: 'user',
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
           }
         ]
       })
@@ -53,14 +52,13 @@ export default async function handler(req, res) {
     let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     code = code.trim();
 
-    // 清理 Markdown 标记
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini API Direct Fetch Error:', error);
+    console.error('Gemini API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

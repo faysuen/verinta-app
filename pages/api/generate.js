@@ -27,13 +27,14 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用 Google 官方推荐的 Interactions API 端点
+    // Interactions API 端点
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`;
 
     const apiRes = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        model: 'models/gemini-2.5-flash',
         input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
       })
     });
@@ -44,8 +45,8 @@ export default async function handler(req, res) {
       throw new Error(data.error?.message || `API error: ${apiRes.status}`);
     }
 
-    // 解析 Interactions API 返回的数据结构
-    let code = data.output || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // 解析返回数据结构
+    let code = data.output || data.choices?.[0]?.message?.content || data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     code = code.trim();
 
     if (code.startsWith('```')) {

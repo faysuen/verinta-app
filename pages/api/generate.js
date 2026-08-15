@@ -27,18 +27,15 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用当前标准稳定端点 gemini-2.0-flash
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    // 使用官方全新的 Interactions API 端点
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`;
 
     const apiRes = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
-          }
-        ]
+        agent: 'gemini-flash',
+        input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
       })
     });
 
@@ -48,7 +45,8 @@ export default async function handler(req, res) {
       throw new Error(data.error?.message || `API Error: ${apiRes.status}`);
     }
 
-    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // 解析 Interactions API 返回的结构
+    let code = data.output || data.outputs?.[0]?.text || '';
     code = code.trim();
 
     if (code.startsWith('```')) {
@@ -57,7 +55,7 @@ export default async function handler(req, res) {
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini API Error:', error);
+    console.error('Gemini Interactions API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

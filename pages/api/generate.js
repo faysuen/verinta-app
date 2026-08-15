@@ -14,10 +14,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey || !apiKey.trim()) {
-    return res.status(500).json({ error: 'API Key is missing in Vercel environment variables.' });
+    return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
   }
 
   try {
@@ -26,65 +26,49 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    // 调用 Google 官方 Gemini 2.0 Flash REST 接口
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey.trim()}`;
+
+    const apiRes = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://vercel.com',
-        'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        // openrouter/auto dynamically routes to available models, avoiding slug expiration errors
-        model: 'openrouter/auto',
-        stream: true,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt }
+        system_instruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
         ],
-        max_tokens: 2000
+        generationConfig: {
+          maxOutputTokens: 4000,
+          temperature: 0.7
+        }
       })
     });
 
     if (!apiRes.ok) {
       const errData = await apiRes.json().catch(() => ({}));
-      throw new Error(errData.error?.message || `OpenRouter API Error: ${apiRes.status}`);
+      throw new Error(errData.error?.message || `Google API Error: ${apiRes.status}`);
     }
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
+    const data = await apiRes.json();
+    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    const reader = apiRes.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    // 清理可能包含的 markdown 代码块标记
+    const cleanedHtml = generatedText
+      .replace(/^```html\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(cleanedHtml);
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const parsed = JSON.parse(trimmed.slice(6));
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              res.write(content);
-            }
-          } catch (e) {
-            // Ignore partial SSE JSON parse errors
-          }
-        }
-      }
-    }
-
-    res.end();
   } catch (error) {
     console.error('Generation Error:', error);
     if (!res.headersSent) {

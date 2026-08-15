@@ -13,7 +13,7 @@ export default function Home() {
 
     setLoading(true);
     setHasGenerated(true);
-    setIframeSrc(''); // Clear previous app
+    setIframeSrc(''); // 清空上一次的生成
 
     try {
       const res = await fetch('/api/generate', {
@@ -42,6 +42,7 @@ export default function Home() {
     <>
       <Head>
         <title>Verinta.ai | Turn a sentence into an instant interactive micro-app</title>
+        <meta name="description" content="Turn a single sentence into an instant interactive micro-app or mini-game." />
       </Head>
     
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center p-4 md:p-8 font-sans">

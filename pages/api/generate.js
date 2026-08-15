@@ -30,8 +30,8 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用当前 API 支持的标准模型名称
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // 重点修改：使用最新的 gemini-2.5-flash 模型
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const result = await model.generateContent([
       SYSTEM_PROMPT,

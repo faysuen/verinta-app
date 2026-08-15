@@ -1,17 +1,4 @@
-const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-game/micro-app creator.
-The user will give you a single phrase expressing their feeling, need, or idea.
-Your goal is to instantly design and write a single-file, highly interactive HTML/CSS/JS micro-app or mini-game based on their deep intent.
-
-【STRICT RULES】:
-1. Output ONLY pure, runnable HTML code (including <style> and <script>).
-2. All UI, text, and labels inside the generated micro-app MUST be in ENGLISH.
-3. Make the design modern, polished, and aesthetic (Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>).
-4. All interactions MUST be fully functional (e.g., fluid click feedbacks, drag-and-drop, canvas animations, random generators, sound/visual effects).
-5. DO NOT wrap code in markdown fences (e.g., NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.
-
-【UNRELATED PROMPT HANDLING】:
-If the user's prompt is unrelated to stress relief, decision making, or is a general knowledge question (e.g., "Capital of France?", "Write a poem"):
-Do NOT give a text response. Instead, create a fun, interactive 'Knowledge Card' or 'Text Tool' (e.g., a flip card with the answer, or a simple text editor with copy/paste buttons). ALWAYS return a functional UI.`;
+const SYSTEM_PROMPT = `You are a front-end developer. Output ONLY pure, executable single-file HTML code (with inline CSS/JS). No markdown. All UI in English. Keep the layout, logic, and animations modern but lightweight so it generates extremely fast.`;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -21,16 +8,13 @@ export default async function handler(req, res) {
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
-    return res.status(500).json({ 
-      error: 'API Key is missing. Please set OPENROUTER_API_KEY in Vercel Environment Variables.' 
-    });
+    return res.status(500).json({ error: 'API Key missing.' });
   }
 
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用 OpenRouter 官方推荐的全局免费路由器 openrouter/free
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -40,11 +24,15 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        model: 'openrouter/free',
+        // 1. 使用生成速度极快的专门代码模型或 lightweight 路由
+        model: 'qwen/qwen-2.5-coder-32b-instruct:free',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: prompt }
-        ]
+        ],
+        // 2. 限制最大生成长度，大幅削减等待时间（微应用 2000 token 足够）
+        max_tokens: 2000,
+        temperature: 0.7
       })
     });
 

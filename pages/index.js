@@ -26,10 +26,16 @@ export default function Home() {
     const userText = input.trim();
     setInput('');
 
+    // 组装要发给后端的历史记录：只取文字内容，且限制条数避免请求过大
+    const history = messages
+      .filter(m => m.content) // 保留所有带文字内容的消息(包括experience模式下的开场白)
+      .slice(-12) // 只带最近12条，够用又不至于无限增长
+      .map(m => ({ role: m.role, text: m.content }));
+
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: userText, html: null },
-      { role: 'assistant', content: '🌙 ...', html: null }
+      { role: 'assistant', content: '🌙 Taking a moment for you...', html: null, pending: true }
     ]);
     setLoading(true);
 
@@ -37,84 +43,35 @@ export default function Home() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userText }),
+        body: JSON.stringify({ prompt: userText, history }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Something went wrong while creating your space.');
+        throw new Error(data.error || 'Something went wrong while creating your space.');
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let raw = '';
-      let mode = null;
-      let contentBuf = '';
-      let headerParsed = false;
+      const { mode, content } = data;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const decoded = decoder.decode(value, { stream: true });
-
-        if (!headerParsed) {
-          raw += decoded;
-          const delimIdx = raw.indexOf('\n---STREAM---\n');
-          if (delimIdx === -1) continue;
-
-          const headerStr = raw.slice(0, delimIdx);
-          try {
-            mode = JSON.parse(headerStr).type;
-          } catch {
-            mode = 'chat';
-          }
-          headerParsed = true;
-          contentBuf = raw.slice(delimIdx + '\n---STREAM---\n'.length);
-        } else {
-          contentBuf += decoded;
-        }
-
-        if (!headerParsed) continue;
-
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
         if (mode === 'experience') {
-          let cleanCode = contentBuf.trim();
-          if (cleanCode.startsWith('```')) {
-            cleanCode = cleanCode.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
-          }
-          setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: 'I made this little space for you 💛',
-              html: cleanCode
-            };
-            return updated;
-          });
-        } else {
-          setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: contentBuf,
-              html: null
-            };
-            return updated;
-          });
-        }
-      }
-
-      if (!headerParsed && raw) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
+          updated[lastIdx] = {
             role: 'assistant',
-            content: raw,
+            content: 'I made this little space for you 💛',
+            html: content
+          };
+        } else {
+          updated[lastIdx] = {
+            role: 'assistant',
+            content: content,
             html: null
           };
-          return updated;
-        });
-      }
+        }
+        return updated;
+      });
     } catch (err) {
       setMessages((prev) => {
         const updated = [...prev];
@@ -156,7 +113,12 @@ export default function Home() {
                 ...(msg.role === 'user' ? styles.userBubble : styles.aiBubble)
               }}
             >
-              <p style={styles.msgText}>{msg.content}</p>
+              <p style={styles.msgText}>
+                {msg.content}
+                {msg.pending && loading && index === messages.length - 1 && (
+                  <span style={styles.pulseDot}>●</span>
+                )}
+              </p>
 
               {msg.html && (
                 <div style={styles.previewCard}>
@@ -286,6 +248,12 @@ const styles = {
   msgText: {
     margin: 0,
     whiteSpace: 'pre-wrap',
+  },
+  pulseDot: {
+    marginLeft: '6px',
+    fontSize: '10px',
+    color: '#c8a2e0',
+    animation: 'pulse 1.2s infinite ease-in-out',
   },
   previewCard: {
     marginTop: '14px',

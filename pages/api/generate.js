@@ -1,6 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-game/micro-app creator.
 The user will give you a single phrase expressing their feeling, need, or idea.
@@ -26,25 +26,24 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // Calling Gemini 2.5 Flash for speed and quality
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        { role: 'user', parts: [{ text: SYSTEM_PROMPT }, { text: `User request: ${prompt}` }] }
-      ]
-    });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    let code = response.text || '';
+    const result = await model.generateContent([
+      SYSTEM_PROMPT,
+      `User request: ${prompt}`
+    ]);
+
+    const response = await result.response;
+    let code = response.text() || '';
     code = code.trim();
     
-    // Clean markdown code blocks if the model accidentally included them
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error(error);
+    console.error('Gemini API Error:', error);
     res.status(500).json({ error: 'Generation failed. Please try again.' });
   }
 }

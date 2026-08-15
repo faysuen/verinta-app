@@ -18,7 +18,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // 兼容读取 OPENROUTER_API_KEY 或存留的 GEMINI_API_KEY
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
@@ -31,8 +30,7 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 调用 OpenRouter 标准 API
-    // 模型 Slug 使用 OpenRouter 官方验证有效确切的 google/gemini-2.5-flash
+    // 使用 OpenRouter 提供的官方免费模型：google/gemini-2.0-flash-exp:free
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -42,7 +40,7 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: prompt }
@@ -59,7 +57,6 @@ export default async function handler(req, res) {
     let code = data.choices?.[0]?.message?.content || '';
     code = code.trim();
 
-    // 自动剥离 Markdown 格式包裹
     if (code.startsWith('```')) {
       code = code.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
     }

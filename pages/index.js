@@ -1,116 +1,198 @@
 import { useState } from 'react';
-import Head from 'next/head';
 
 export default function Home() {
   const [prompt, setPrompt] = useState('');
+  const [htmlCode, setHtmlCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [iframeSrc, setIframeSrc] = useState('');
-  const [hasGenerated, setHasGenerated] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleGenerate = async (customPrompt) => {
-    const textToUse = customPrompt || prompt;
-    if (!textToUse.trim()) return;
-
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return;
     setLoading(true);
-    setHasGenerated(true);
-    setIframeSrc(''); // 清空上一次的生成
-
+    setError('');
+    
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: textToUse })
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-
-      if (data.html) {
-        const blob = new Blob([data.html], { type: 'text/html' });
-        setIframeSrc(URL.createObjectURL(blob));
-      } else {
-        alert(data.error || 'Generation failed');
-        setHasGenerated(false);
-      }
+      if (!res.ok) throw new Error(data.error || '生成失败');
+      setHtmlCode(data.html);
     } catch (err) {
-      alert('Something went wrong. Please try again.');
-      setHasGenerated(false);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <>
-      <Head>
-        <title>Verinta.ai | Turn a sentence into an instant interactive micro-app</title>
-        <meta name="description" content="Turn a single sentence into an instant interactive micro-app or mini-game." />
-      </Head>
-    
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center p-4 md:p-8 font-sans">
-        
-        {/* Header */}
-        <header className="max-w-2xl text-center my-8 space-y-3">
-          <h1 className="text-4xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-indigo-500">
-            Verinta.ai
-          </h1>
-          <p className="text-slate-400 text-sm md:text-base tracking-wide">
-            Turn a single sentence into an instant interactive micro-app
-          </p>
-        </header>
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <h1 style={styles.title}>MICRO APP BUILDER</h1>
+        <p style={styles.subtitle}>输入提示词，极速生成单文件微应用/小游戏</p>
+      </header>
 
-        {/* Main Input Area */}
-        <main className="w-full max-w-3xl space-y-6">
-          <div className="relative flex items-center">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-              placeholder="e.g. Stressed at work, need bubble wrap / Help me pick lunch..."
-              className="w-full px-6 py-4 pr-24 text-base md:text-lg rounded-2xl bg-slate-900 border border-slate-800 focus:outline-none focus:border-purple-500 text-slate-100 shadow-2xl transition placeholder-slate-500"
-            />
+      <main style={styles.main}>
+        {/* 输入框区域：支持多行输入与自动增高 */}
+        <div style={styles.inputCard}>
+          <textarea
+            style={styles.textarea}
+            placeholder="描述你想做的应用（例如：做一个带有计时器和记分板的 2048 小游戏...）"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            rows={5}
+          />
+          <div style={styles.actionBar}>
             <button
-              onClick={() => handleGenerate()}
-              disabled={loading}
-              className="absolute right-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium px-5 py-2.5 rounded-xl transition shadow-md disabled:opacity-50"
+              onClick={handleGenerate}
+              disabled={loading || !prompt.trim()}
+              style={{
+                ...styles.button,
+                opacity: loading || !prompt.trim() ? 0.5 : 1,
+                cursor: loading || !prompt.trim() ? 'not-allowed' : 'pointer'
+              }}
             >
-              {loading ? 'Building...' : 'Create ✨'}
+              {loading ? 'BUILDING...' : 'CREATE APP →'}
             </button>
           </div>
+        </div>
 
-          {/* Prompt Chips */}
-          <div className="flex flex-wrap gap-2 justify-center text-xs text-slate-400">
-            <span className="text-slate-500">Try these:</span>
-            <button onClick={() => handleGenerate('Pop infinite bubble wrap to relieve stress')} className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-800 transition">🫧 Bubble Wrap</button>
-            <button onClick={() => handleGenerate('Spin the wheel to decide what to eat for dinner')} className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-800 transition">🍕 Dinner Wheel</button>
-            <button onClick={() => handleGenerate('Cyber Zen Woodblock for instant good karma')} className="bg-slate-900 hover:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-800 transition">🪵 Zen Clicker</button>
+        {error && <div style={styles.errorBox}>{error}</div>}
+
+        {/* 预览区域 */}
+        {htmlCode && (
+          <div style={styles.previewContainer}>
+            <div style={styles.previewHeader}>
+              <span style={styles.previewTitle}>LIVE PREVIEW</span>
+              <button
+                onClick={() => setHtmlCode('')}
+                style={styles.clearBtn}
+              >
+                CLEAR
+              </button>
+            </div>
+            <iframe
+              srcDoc={htmlCode}
+              title="Preview"
+              style={styles.iframe}
+              sandbox="allow-scripts allow-modals allow-same-origin"
+            />
           </div>
-
-          {/* Render Sandbox Area */}
-          <div className="relative w-full h-[520px] bg-slate-900/60 rounded-3xl border border-slate-800 overflow-hidden shadow-2xl flex items-center justify-center">
-            {!hasGenerated && !loading && (
-              <div className="text-center space-y-3 p-6 text-slate-500">
-                <div className="text-5xl">🪄</div>
-                <p className="text-sm">Type a prompt above to bring your instant micro-app to life</p>
-              </div>
-            )}
-
-            {loading && (
-              <div className="flex flex-col items-center space-y-4 p-6 text-center">
-                <div className="w-10 h-10 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
-                <p className="text-purple-400 text-sm font-medium animate-pulse">Verinta is building your unique app in real-time...</p>
-              </div>
-            )}
-
-            {iframeSrc && !loading && (
-              <iframe
-                src={iframeSrc}
-                sandbox="allow-scripts"
-                className="w-full h-full border-0"
-              />
-            )}
-          </div>
-        </main>
-      </div>
-    </>
+        )}
+      </main>
+    </div>
   );
 }
+
+// 高级黑白主题 (Pure Black & White Minimalist Style)
+const styles = {
+  container: {
+    minHeight: '100vh',
+    backgroundColor: '#000000',
+    color: '#ffffff',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif',
+    padding: '40px 20px',
+    boxSizing: 'border-box',
+  },
+  header: {
+    maxWidth: '800px',
+    margin: '0 auto 30px auto',
+    textAlign: 'center',
+  },
+  title: {
+    fontSize: '32px',
+    fontWeight: '800',
+    letterSpacing: '2px',
+    margin: '0 0 10px 0',
+  },
+  subtitle: {
+    color: '#888888',
+    fontSize: '14px',
+    margin: 0,
+  },
+  main: {
+    maxWidth: '800px',
+    margin: '0 auto',
+  },
+  inputCard: {
+    backgroundColor: '#0d0d0d',
+    border: '1px solid #262626',
+    borderRadius: '12px',
+    padding: '16px',
+    marginBottom: '24px',
+  },
+  textarea: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    color: '#ffffff',
+    border: 'none',
+    outline: 'none',
+    fontSize: '16px',
+    lineHeight: '1.6',
+    resize: 'vertical',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  },
+  actionBar: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginTop: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid #1a1a1a',
+  },
+  button: {
+    backgroundColor: '#ffffff',
+    color: '#000000',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '10px 24px',
+    fontSize: '14px',
+    fontWeight: '700',
+    letterSpacing: '0.5px',
+    transition: 'all 0.2s ease',
+  },
+  errorBox: {
+    backgroundColor: '#1a0000',
+    border: '1px solid #440000',
+    color: '#ff5555',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    fontSize: '14px',
+  },
+  previewContainer: {
+    border: '1px solid #262626',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    backgroundColor: '#0d0d0d',
+  },
+  previewHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    backgroundColor: '#141414',
+    borderBottom: '1px solid #262626',
+  },
+  previewTitle: {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#888888',
+    letterSpacing: '1px',
+  },
+  clearBtn: {
+    background: 'none',
+    border: 'none',
+    color: '#666666',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  iframe: {
+    width: '100%',
+    height: '550px',
+    border: 'none',
+    backgroundColor: '#ffffff', // 预览内容框默认纯白背景，便于呈现AI生成的应用
+  }
+};

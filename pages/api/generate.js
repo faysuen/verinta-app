@@ -1,101 +1,95 @@
-export const config = {
-  runtime: 'edge', // 开启 Edge Runtime，完美适配流式传输，0 等待延迟
-};
+const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-app creator.
+The user will give you a single phrase expressing their feeling, need, or idea.
+Your goal is to instantly design and write a single-file, highly interactive HTML/CSS/JS micro-app or mini-game.
 
-const SYSTEM_PROMPT = `You are a front-end developer. Output ONLY pure HTML code (with inline CSS/JS). No markdown. All UI in English. Keep code concise, fast-generating, and bug-free.`;
+【STRICT RULES】:
+1. Output ONLY pure, runnable HTML code (including <style> and <script>).
+2. All UI, text, and labels inside the generated micro-app MUST be in ENGLISH.
+3. Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>.
+4. All interactions MUST be fully functional.
+5. DO NOT wrap code in markdown fences (NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.`;
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
 
-  if (!apiKey || apiKey.trim() === '') {
-    return new Response(JSON.stringify({ error: 'API Key is missing.' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  if (!apiKey || !apiKey.trim()) {
+    return res.status(500).json({ error: 'API Key is missing in Vercel environment variables.' });
   }
 
   try {
-    const { prompt } = await req.json();
+    const { prompt } = req.body || {};
     if (!prompt) {
-      return new Response(JSON.stringify({ error: 'Prompt is required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // 调用 OpenRouter 流式 API
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://vercel.com',
-        'X-Title': 'Micro App Generator',
+        'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
         model: 'google/gemma-2-9b-it:free',
         stream: true,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
+          { role: 'user', content: prompt }
         ],
-        max_tokens: 1500,
-      }),
+        max_tokens: 2000
+      })
     });
 
     if (!apiRes.ok) {
-      const err = await apiRes.json();
-      return new Response(JSON.stringify({ error: err.error?.message || 'OpenRouter Error' }), {
-        status: apiRes.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const errData = await apiRes.json().catch(() => ({}));
+      throw new Error(errData.error?.message || `OpenRouter API Error: ${apiRes.status}`);
     }
 
-    // 使用 TransformStream 实时解析 SSE 并转换成纯文本流给前端
-    const encoder = new TextEncoder();
+    // Set streaming headers
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+
+    const reader = apiRes.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
-        const text = decoder.decode(chunk);
-        const lines = text.split('\n').filter((line) => line.trim() !== '');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.replace('data: ', '');
-            if (dataStr === '[DONE]') break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-            try {
-              const parsed = JSON.parse(dataStr);
-              const content = parsed.choices?.[0]?.delta?.content || '';
-              if (content) {
-                controller.enqueue(encoder.encode(content));
-              }
-            } catch (e) {
-              // 忽略半包 JSON 解析异常
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === 'data: [DONE]') continue;
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const parsed = JSON.parse(trimmed.slice(6));
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              res.write(content);
             }
+          } catch (e) {
+            // Ignore partial SSE JSON parse errors
           }
         }
-      },
-    });
+      }
+    }
 
-    return new Response(apiRes.body.pipeThrough(transformStream), {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    res.end();
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message || 'Generation failed.' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('Generation Error:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: error.message || 'Generation failed.' });
+    }
+    res.end();
   }
 }

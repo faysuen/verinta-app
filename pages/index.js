@@ -4,7 +4,7 @@ export default function Home() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hey! 我是你的微应用助手。告诉我你想做个什么小应用或小游戏？（比如：“做一个带舒缓音效的呼吸减压器” 或 “做一个 2048 小游戏”）',
+      content: "Hey there! I'm your AI Micro-App Assistant. What would you like to build today? (e.g., 'A relaxing breathing app with calm ambient sounds' or 'A classic 2048 mini-game')",
       html: null
     }
   ]);
@@ -26,7 +26,7 @@ export default function Home() {
     const userText = input.trim();
     setInput('');
     
-    // 1. 追加用户消息
+    // Append user message
     const newMessages = [...messages, { role: 'user', content: userText, html: null }];
     setMessages(newMessages);
     setLoading(true);
@@ -39,14 +39,14 @@ export default function Home() {
       });
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || '生成失败，请重试');
+      if (!res.ok) throw new Error(data.error || 'Generation failed. Please try again.');
 
-      // 2. 追加 AI 回复与生成的网页预览
+      // Append AI response with generated micro-app preview
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: '搞定！已为你生成好应用，可以在下方直接互动：',
+          content: 'All set! Your app is generated and ready to use below:',
           html: data.html
         }
       ]);
@@ -55,7 +55,7 @@ export default function Home() {
         ...prev,
         {
           role: 'assistant',
-          content: `出现了一点小问题：${err.message}`,
+          content: `Something went wrong: ${err.message}`,
           html: null
         }
       ]);
@@ -66,7 +66,7 @@ export default function Home() {
 
   return (
     <div style={styles.container}>
-      {/* 顶部 Header */}
+      {/* Header */}
       <header style={styles.header}>
         <div style={styles.avatar}>✦</div>
         <div>
@@ -75,7 +75,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* 对话消息区域 */}
+      {/* Chat Messages Area */}
       <main style={styles.chatBox}>
         {messages.map((msg, index) => (
           <div
@@ -93,7 +93,7 @@ export default function Home() {
             >
               <p style={styles.msgText}>{msg.content}</p>
 
-              {/* 如果该条消息包含生成的 HTML，渲染 Preview iFrame */}
+              {/* Render Preview iFrame if message contains generated HTML */}
               {msg.html && (
                 <div style={styles.previewCard}>
                   <iframe
@@ -111,19 +111,19 @@ export default function Home() {
         {loading && (
           <div style={{ ...styles.messageWrapper, justifyContent: 'flex-start' }}>
             <div style={{ ...styles.bubble, ...styles.aiBubble }}>
-              <p style={styles.msgText}>正在构思并编写代码中，请稍等片刻...</p>
+              <p style={styles.msgText}>Designing and writing code for your app, please wait a moment...</p>
             </div>
           </div>
         )}
         <div ref={chatEndRef} />
       </main>
 
-      {/* 底部输入框 */}
+      {/* Bottom Input Area */}
       <footer style={styles.inputArea}>
         <div style={styles.inputContainer}>
           <textarea
             style={styles.textarea}
-            placeholder="与 AI 交流你的灵感... (Press Enter to send)"
+            placeholder="Share your ideas with AI... (Press Enter to send)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -142,7 +142,7 @@ export default function Home() {
               opacity: loading || !input.trim() ? 0.4 : 1
             }}
           >
-            发送 →
+            Send →
           </button>
         </div>
       </footer>
@@ -150,7 +150,7 @@ export default function Home() {
   );
 }
 
-// 极简黑白对话主题
+// Minimalist Monochrome Theme
 const styles = {
   container: {
     display: 'flex',

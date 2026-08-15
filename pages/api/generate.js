@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用当前确切免费且代码能力强的 Llama 3.3 70B 模型
+    // 使用 OpenRouter 官方全局免费路由，由平台自动分发至当前可用的免费模型
     const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        model: 'openrouter/free',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: prompt }

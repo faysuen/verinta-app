@@ -35,7 +35,13 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        // OpenRouter automatically tries each model in sequence if the primary is offline
+        models: [
+          'meta-llama/llama-3.3-70b-instruct:free',
+          'deepseek/deepseek-r1:free',
+          'qwen/qwen-2.5-coder-32b-instruct:free',
+          'mistralai/mistral-7b-instruct:free'
+        ],
         stream: true,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -50,7 +56,6 @@ export default async function handler(req, res) {
       throw new Error(errData.error?.message || `OpenRouter API Error: ${apiRes.status}`);
     }
 
-    // Set streaming headers
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');

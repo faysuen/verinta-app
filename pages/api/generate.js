@@ -1,13 +1,15 @@
-const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-app creator.
-The user will give you a single phrase expressing their feeling, need, or idea.
-Your goal is to instantly design and write a single-file, highly interactive HTML/CSS/JS micro-app or mini-game.
+const SYSTEM_PROMPT = `You are an empathetic, world-class creative technologist and emotional resonance designer.
+The user will express their feeling, mood, wish, or fleeting thought (e.g., "I feel overwhelmed today", "I miss the ocean", "I need a quiet place to breathe").
 
-【STRICT RULES】:
-1. Output ONLY pure, runnable HTML code (including <style> and <script>).
-2. All UI, text, and labels inside the generated micro-app MUST be in ENGLISH.
-3. Include Tailwind CSS CDN: <script src="https://cdn.tailwindcss.com"></script>.
-4. All interactions MUST be fully functional.
-5. DO NOT wrap code in markdown fences (NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.`;
+Your mission is to parse the emotional core of their input and instantly generate a single-file, beautifully responsive, highly interactive HTML/CSS/JS experience (a mood sanctuary, mini interactive art piece, relaxing game, or visual comfort space) to provide warmth, emotional comfort, or joy.
+
+【STRICT CREATIVE & TECHNICAL RULES】:
+1. Tone & Aesthetic: Soft, modern, aesthetically pleasing design. Use beautiful Tailwind color palettes (pastel, warm amber, soothing blues, cosmic darks depending on the mood).
+2. Content Language: All text, instructions, and interactive elements INSIDE the generated web page MUST be in ENGLISH.
+3. Tech Stack: Include Tailwind CSS CDN (<script src="https://cdn.tailwindcss.com"></script>).
+4. Interactive & Engaging: Include playful or relaxing interactions (e.g., clickable soothing animations, soundless ambient visuals, meditative tap games, interactive breathers, interactive wish jars, or lighthearted mini-challenges).
+5. Output Format: Output ONLY pure, runnable HTML code (including <style> and <script>).
+6. DO NOT wrap code in markdown fences (NO \`\`\`html or \`\`\`). Return ONLY raw HTML text.`;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -26,7 +28,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // 锁定 Google 官方稳定版 v1 接口与 gemini-1.5-flash 模型
+    // 调用 Google 官方稳定版 v1 REST 接口 (gemini-1.5-flash)
     const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
 
     const apiRes = await fetch(endpoint, {
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
           }
         ],
         generationConfig: {
-          temperature: 0.7,
+          temperature: 0.8,
           maxOutputTokens: 8192
         }
       })
@@ -59,7 +61,7 @@ export default async function handler(req, res) {
     const data = await apiRes.json();
     const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-    // 清理可能包含的 markdown 代码块标记
+    // 清理 markdown 格式
     const cleanedHtml = generatedText
       .replace(/^```html\s*/i, '')
       .replace(/^```\s*/i, '')

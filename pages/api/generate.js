@@ -1,3 +1,51 @@
+// ⚠️ 简易内存限流：仅适用于低流量/单实例场景。
+// Vercel Serverless 在高并发下会启动多个实例，这个 Map 不会在实例间共享，
+// 限流效果会打折扣。真正要用于生产环境防滥用，建议换成 Upstash Redis
+// (文末有对应版本思路)。这里先解决"完全没有防护"的问题。
+const rateLimitStore = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分钟窗口
+const RATE_LIMIT_MAX_REQUESTS = 8; // 每个IP每分钟最多8次请求
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const record = rateLimitStore.get(ip);
+
+  if (!record || now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitStore.set(ip, { windowStart: now, count: 1 });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+}
+
+// 定期清理老记录，避免Map无限增长（简单起见，每次请求有小概率触发一次清理）
+function cleanupRateLimitStore() {
+  if (Math.random() > 0.02) return; // 约2%概率触发，不用每次都清
+  const now = Date.now();
+  for (const [ip, record] of rateLimitStore.entries()) {
+    if (now - record.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitStore.delete(ip);
+    }
+  }
+}
+
+// 完全不依赖模型调用的静态安抚语——用于Gemini重试多次仍失败的兜底场景，
+// 保证即使API整体挂掉，用户看到的也不是冷冰冰的技术报错。
+const STATIC_FALLBACK_MESSAGES = [
+  "I'm having a little trouble reaching my thoughts right now, but I'm still here with you. Would you like to try telling me again in a moment?",
+  "Something's not quite connecting on my end. Take a breath with me — and if you'd like, try again shortly.",
+  "I couldn't quite create something for you just now, but your feelings are still heard. Give it another try in a bit?"
+];
+
+function getStaticFallback() {
+  return STATIC_FALLBACK_MESSAGES[Math.floor(Math.random() * STATIC_FALLBACK_MESSAGES.length)];
+}
+
 const SYSTEM_PROMPT = `You are a warm, emotionally attuned companion inside "Sanctuary" — a quiet space where people can talk about how they feel.
 
 For EVERY user message, decide which of two modes fits, then respond with that mode and content.
@@ -22,10 +70,7 @@ Use conversation history for context — if the user says "make it gentler" or "
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    mode: {
-      type: "STRING",
-      enum: ["chat", "experience"]
-    },
+    mode: { type: "STRING", enum: ["chat", "experience"] },
     content: {
       type: "STRING",
       description: "The reply text (chat mode) or full HTML page source (experience mode)"
@@ -34,6 +79,96 @@ const RESPONSE_SCHEMA = {
   required: ["mode", "content"],
   propertyOrdering: ["mode", "content"]
 };
+
+// 判断哪些错误值得重试：网络抖动、5xx、429限流 —— 值得；
+// 400参数错误、responseSchema解析问题这类"重试也没用"的不重试，省时间
+function isRetryableStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function callGeminiOnce(apiKey, contents) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey.trim()}`;
+
+  const apiRes = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents,
+      generationConfig: {
+        temperature: 0.8,
+        maxOutputTokens: 16384,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA
+      }
+    })
+  });
+
+  if (!apiRes.ok) {
+    const errData = await apiRes.json().catch(() => ({}));
+    const err = new Error(errData.error?.message || `Google API Error: ${apiRes.status}`);
+    err.status = apiRes.status;
+    throw err;
+  }
+
+  const data = await apiRes.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!rawText) {
+    const finishReason = data.candidates?.[0]?.finishReason;
+    const err = new Error(
+      finishReason === 'SAFETY'
+        ? 'blocked_by_safety'
+        : 'empty_response'
+    );
+    err.status = 502;
+    err.finishReason = finishReason;
+    throw err;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch (e) {
+    const err = new Error('malformed_json');
+    err.status = 502;
+    throw err;
+  }
+
+  if (!parsed.mode || !parsed.content) {
+    const err = new Error('missing_fields');
+    err.status = 502;
+    throw err;
+  }
+
+  return parsed;
+}
+
+async function callGeminiWithRetry(apiKey, contents, maxAttempts = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await callGeminiOnce(apiKey, contents);
+    } catch (err) {
+      lastError = err;
+
+      const retryable = isRetryableStatus(err.status) || err.message === 'malformed_json' || err.message === 'empty_response';
+      const isLastAttempt = attempt === maxAttempts;
+
+      if (!retryable || isLastAttempt) {
+        throw err;
+      }
+
+      // 指数退避：第1次重试等 500ms，第2次等 1000ms
+      const backoffMs = 500 * attempt;
+      console.warn(`Gemini call failed (attempt ${attempt}/${maxAttempts}): ${err.message}. Retrying in ${backoffMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  throw lastError;
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -45,13 +180,25 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
   }
 
+  // 取客户端IP（Vercel会把真实IP放在这个header里）
+  const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
+    .toString()
+    .split(',')[0]
+    .trim();
+
+  cleanupRateLimitStore();
+
+  if (!checkRateLimit(clientIp)) {
+    return res.status(429).json({
+      error: "You're sending messages a little fast — take a breath, and try again in a moment."
+    });
+  }
+
   const { prompt, history } = req.body || {};
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
-  // history: 前端传来的过往对话，格式 [{ role: 'user'|'model', text: '...' }]
-  // 只把纯文字内容带上，不把生成的整段HTML也塞进上下文（省token，也避免模型模仿旧代码）
   const contents = [
     ...(Array.isArray(history) ? history.map(h => ({
       role: h.role === 'assistant' ? 'model' : 'user',
@@ -61,56 +208,7 @@ export default async function handler(req, res) {
   ];
 
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey.trim()}`;
-
-    const apiRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents,
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 16384,
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA
-        }
-      })
-    });
-
-    if (!apiRes.ok) {
-      const errData = await apiRes.json().catch(() => ({}));
-      console.error('Google API raw error:', JSON.stringify(errData));
-      return res.status(apiRes.status).json({
-        error: errData.error?.message || `Google API Error: ${apiRes.status}`
-      });
-    }
-
-    const data = await apiRes.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!rawText) {
-      console.error('Empty response from Gemini:', JSON.stringify(data));
-      const finishReason = data.candidates?.[0]?.finishReason;
-      return res.status(502).json({
-        error: finishReason === 'SAFETY'
-          ? 'The response was blocked by safety filters. Try rephrasing.'
-          : 'Gemini returned an empty response.'
-      });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-    } catch (e) {
-      console.error('Failed to parse structured JSON from Gemini:', rawText);
-      return res.status(502).json({ error: 'Received malformed structured output from the model.' });
-    }
-
-    if (!parsed.mode || !parsed.content) {
-      console.error('Structured output missing fields:', parsed);
-      return res.status(502).json({ error: 'Model response was missing required fields.' });
-    }
+    const parsed = await callGeminiWithRetry(apiKey, contents, 3);
 
     let content = parsed.content;
     if (parsed.mode === 'experience') {
@@ -120,13 +218,17 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({
-      mode: parsed.mode,
-      content
-    });
+    return res.status(200).json({ mode: parsed.mode, content });
 
   } catch (error) {
-    console.error('Generation Error:', error);
-    return res.status(500).json({ error: error.message || 'Generation failed.' });
+    console.error('Generation Error after retries:', error.message, error.status || '');
+
+    // 所有重试都失败了：给用户一个不依赖模型的、有温度的静态兜底回复，
+    // 而不是让前端展示一堆技术性报错文字
+    return res.status(200).json({
+      mode: 'chat',
+      content: getStaticFallback(),
+      _fallback: true // 前端不需要用到，但方便你在网络面板里辨认这是兜底触发的
+    });
   }
 }

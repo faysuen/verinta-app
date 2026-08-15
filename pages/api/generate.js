@@ -35,12 +35,8 @@ export default async function handler(req, res) {
         'X-Title': 'Micro App Generator'
       },
       body: JSON.stringify({
-        // Maximum 3 models allowed in fallback array
-        models: [
-          'meta-llama/llama-3.3-70b-instruct:free',
-          'qwen/qwen-2.5-coder-32b-instruct:free',
-          'mistralai/mistral-7b-instruct:free'
-        ],
+        // openrouter/auto dynamically routes to available models, avoiding slug expiration errors
+        model: 'openrouter/auto',
         stream: true,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },

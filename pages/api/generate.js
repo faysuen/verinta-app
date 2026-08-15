@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        agent: 'models/gemini-2.0-flash',
+        agent: 'gemini-flash',
         input: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`
       })
     });

@@ -29,7 +29,7 @@ export default function Home() {
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: userText, html: null },
-      { role: 'assistant', content: '🌙 Taking a breath and creating something for you...', html: '' }
+      { role: 'assistant', content: '🌙 ...', html: null }
     ]);
     setLoading(true);
 
@@ -47,27 +47,71 @@ export default function Home() {
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let fullCode = '';
+      let raw = '';
+      let mode = null; // 'chat' | 'experience'
+      let contentBuf = '';
+      let headerParsed = false;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        fullCode += chunk;
+        const decoded = decoder.decode(value, { stream: true });
 
-        let cleanCode = fullCode.trim();
-        if (cleanCode.startsWith('```')) {
-          cleanCode = cleanCode.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
+        if (!headerParsed) {
+          raw += decoded;
+          const delimIdx = raw.indexOf('\n---STREAM---\n');
+          if (delimIdx === -1) continue; // 头部还没收全，继续等下一块
+
+          const headerStr = raw.slice(0, delimIdx);
+          try {
+            mode = JSON.parse(headerStr).type;
+          } catch {
+            mode = 'chat';
+          }
+          headerParsed = true;
+          contentBuf = raw.slice(delimIdx + '\n---STREAM---\n'.length);
+        } else {
+          contentBuf += decoded;
         }
 
+        if (!headerParsed) continue;
+
+        if (mode === 'experience') {
+          let cleanCode = contentBuf.trim();
+          if (cleanCode.startsWith('```')) {
+            cleanCode = cleanCode.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
+          }
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: 'I made this little space for you 💛',
+              html: cleanCode
+            };
+            return updated;
+          });
+        } else {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: contentBuf,
+              html: null
+            };
+            return updated;
+          });
+        }
+      }
+
+      // 流结束但一直没解析出 header 的兜底情况（理论上不该发生，防御一下）
+      if (!headerParsed && raw) {
         setMessages((prev) => {
           const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          updated[lastIdx] = {
+          updated[updated.length - 1] = {
             role: 'assistant',
-            content: 'I made this little space for you 💛',
-            html: cleanCode
+            content: raw,
+            html: null
           };
           return updated;
         });

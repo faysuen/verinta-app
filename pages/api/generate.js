@@ -18,47 +18,28 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  // 使用 OPENROUTER_API_KEY（或者保持 GEMINI_API_KEY，根据你在 Vercel 设定的变量名）
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
+    return res.status(500).json({ error: 'API Key is not set in Environment Variables.' });
   }
 
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    let selectedModel = 'models/gemini-2.0-flash';
-
-    // 1. 动态获取该 API Key 账号下当前真正支持 generateContent 的模型列表
-    try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const validModels = (listData.models || [])
-          .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-          .map(m => m.name);
-
-        if (validModels.length > 0) {
-          // 优先寻找名字里带有 flash 的模型，找不到则用列表中的第一个
-          const flashModel = validModels.find(m => m.includes('flash'));
-          selectedModel = flashModel || validModels[0];
-        }
-      }
-    } catch (e) {
-      console.warn('Model auto-discovery failed, using default target:', e);
-    }
-
-    // 2. 发送实际生成请求
-    const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
-
-    const apiRes = await fetch(generateUrl, {
+    // 通过 OpenRouter 标准 OpenAI 兼容接口调用 Gemini 2.0 Flash
+    const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
-          }
+        model: 'google/gemini-2.0-flash-001',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
         ]
       })
     });
@@ -69,7 +50,7 @@ export default async function handler(req, res) {
       throw new Error(data.error?.message || `API Error: ${apiRes.status}`);
     }
 
-    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let code = data.choices?.[0]?.message?.content || '';
     code = code.trim();
 
     if (code.startsWith('```')) {
@@ -78,7 +59,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini Dynamic Endpoint Error:', error);
-    return res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
+    console.error('Generation Error:', error);
+    return res.status(500).json({ error: error.message || 'Generation failed.' });
   }
 }

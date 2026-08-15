@@ -30,15 +30,15 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用稳定经典的 gemini-1.5-flash 模型
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // 使用动态最新别名，避免写死版本导致 404 报错
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
-    const result = model.generateContent([
+    const result = await model.generateContent([
       SYSTEM_PROMPT,
       `User request: ${prompt}`
     ]);
 
-    const response = (await result).response;
+    const response = await result.response;
     let code = response.text() || '';
     code = code.trim();
     

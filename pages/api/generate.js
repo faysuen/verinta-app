@@ -1,8 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
-
-// 初始化 Google GenAI 官方 SDK
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-
 const SYSTEM_PROMPT = `You are a world-class front-end developer and micro-game/micro-app creator.
 The user will give you a single phrase expressing their feeling, need, or idea.
 Your goal is to instantly design and write a single-file, highly interactive HTML/CSS/JS micro-app or mini-game based on their deep intent.
@@ -23,7 +18,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
   }
 
@@ -31,13 +27,28 @@ export default async function handler(req, res) {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-    // 使用官方 SDK 调用当前标准的可用模型别名
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}`,
+    // 使用当前标准稳定端点 gemini-2.0-flash
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const apiRes = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser request: ${prompt}` }]
+          }
+        ]
+      })
     });
 
-    let code = response.text || '';
+    const data = await apiRes.json();
+
+    if (!apiRes.ok) {
+      throw new Error(data.error?.message || `API Error: ${apiRes.status}`);
+    }
+
+    let code = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     code = code.trim();
 
     if (code.startsWith('```')) {
@@ -46,7 +57,7 @@ export default async function handler(req, res) {
 
     res.status(200).json({ html: code });
   } catch (error) {
-    console.error('Gemini GenAI SDK Error:', error);
+    console.error('Gemini API Error:', error);
     res.status(500).json({ error: error.message || 'Generation failed. Please try again.' });
   }
 }

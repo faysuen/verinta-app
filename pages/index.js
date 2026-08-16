@@ -2,11 +2,27 @@ import { useState, useRef, useEffect } from 'react';
 
 const FAVORITES_KEY = 'sanctuary_favorites';
 
+// #6: 情绪速选标签
+const EMOTION_CHIPS = [
+  { label: '😔 Feeling low', text: "I've been feeling really low today." },
+  { label: '😰 Anxious', text: "I feel anxious and can't quite settle down." },
+  { label: '🌊 Missing something', text: "I've been missing something, I'm not sure how to explain it." },
+  { label: '🌙 Just need quiet', text: "I just want a quiet moment to breathe." },
+];
+
+// #7: 硬编码的求助资源，不依赖模型生成，保证信息准确
+const CRISIS_RESOURCES = [
+  { region: 'US & Canada', text: '988 Suicide & Crisis Lifeline — call or text 988' },
+  { region: 'US (text option)', text: 'Crisis Text Line — text HOME to 741741' },
+  { region: 'UK & Ireland', text: 'Samaritans — call 116 123' },
+  { region: 'Elsewhere', text: 'International Association for Suicide Prevention — findahelpline.com' },
+];
+
 export default function Home() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: "Hi, I'm here with you. 🌿 Tell me how you're feeling right now — even a single word is enough. (e.g. \"I feel overwhelmed today\", \"I miss the ocean\", \"I just need a quiet place to breathe\")",
+      content: "Hi, I'm here with you. 🌿 Tell me how you're feeling right now — even a single word is enough.",
       html: null
     }
   ]);
@@ -73,21 +89,18 @@ export default function Home() {
     setShowFavorites(false);
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
-
-    const userText = input.trim();
-    setInput('');
+  const sendMessage = async (userText) => {
+    if (!userText.trim() || loading) return;
 
     const history = messages
-      .filter(m => m.content)
+      .filter(m => m.content && m.mode !== 'support') // support消息不作为历史上下文传回去，避免模型持续锚定在危机语境
       .slice(-12)
       .map(m => ({ role: m.role, text: m.content }));
 
     setMessages((prev) => [
       ...prev,
       { role: 'user', content: userText, html: null },
-      { role: 'assistant', content: '🌙 Taking a moment for you...', html: null, pending: true }
+      { role: 'assistant', content: '', html: null, pending: true }
     ]);
     setLoading(true);
 
@@ -116,10 +129,17 @@ export default function Home() {
             html: content,
             userPrompt: userText
           };
+        } else if (mode === 'support') {
+          updated[lastIdx] = {
+            role: 'assistant',
+            content,
+            html: null,
+            mode: 'support'
+          };
         } else {
           updated[lastIdx] = {
             role: 'assistant',
-            content: content,
+            content,
             html: null
           };
         }
@@ -141,8 +161,35 @@ export default function Home() {
     }
   };
 
+  const handleSend = () => {
+    if (!input.trim() || loading) return;
+    const text = input.trim();
+    setInput('');
+    sendMessage(text);
+  };
+
+  const handleChipClick = (chipText) => {
+    if (loading) return;
+    sendMessage(chipText);
+  };
+
+  // #6: 只在还没有真实对话发生时展示速选标签（第一条assistant消息之后、用户还没发过消息前）
+  const showChips = messages.length === 1 && messages[0].role === 'assistant';
+
   return (
     <div style={styles.container}>
+      {/* #5: breathing glow 动画的 keyframes 定义 */}
+      <style>{`
+        @keyframes breathe {
+          0%, 100% { transform: scale(0.85); opacity: 0.5; }
+          50% { transform: scale(1.15); opacity: 1; }
+        }
+        @keyframes breatheOuter {
+          0%, 100% { transform: scale(1); opacity: 0.3; }
+          50% { transform: scale(1.4); opacity: 0.6; }
+        }
+      `}</style>
+
       <header style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.avatar}>🌸</div>
@@ -151,10 +198,7 @@ export default function Home() {
             <p style={styles.status}>A quiet space, made just for how you feel</p>
           </div>
         </div>
-        <button
-          style={styles.favToggleBtn}
-          onClick={() => setShowFavorites(true)}
-        >
+        <button style={styles.favToggleBtn} onClick={() => setShowFavorites(true)}>
           ♡ Saved {favorites.length > 0 && `(${favorites.length})`}
         </button>
       </header>
@@ -171,15 +215,31 @@ export default function Home() {
             <div
               style={{
                 ...styles.bubble,
-                ...(msg.role === 'user' ? styles.userBubble : styles.aiBubble)
+                ...(msg.role === 'user' ? styles.userBubble : styles.aiBubble),
+                ...(msg.mode === 'support' ? styles.supportBubble : {})
               }}
             >
-              <p style={styles.msgText}>
-                {msg.content}
-                {msg.pending && loading && index === messages.length - 1 && (
-                  <span style={styles.pulseDot}>●</span>
-                )}
-              </p>
+              {/* #5: pending消息展示呼吸光晕动画，而不是文字 */}
+              {msg.pending && loading && index === messages.length - 1 ? (
+                <div style={styles.breatheWrap}>
+                  <div style={styles.breatheOuter} />
+                  <div style={styles.breatheInner} />
+                </div>
+              ) : (
+                <p style={styles.msgText}>{msg.content}</p>
+              )}
+
+              {/* #7: support模式下附加固定的求助资源卡片 */}
+              {msg.mode === 'support' && (
+                <div style={styles.resourceCard}>
+                  <p style={styles.resourceTitle}>You don't have to go through this alone</p>
+                  {CRISIS_RESOURCES.map((r, i) => (
+                    <p key={i} style={styles.resourceLine}>
+                      <span style={styles.resourceRegion}>{r.region}:</span> {r.text}
+                    </p>
+                  ))}
+                </div>
+              )}
 
               {msg.html && (
                 <div style={styles.previewCard}>
@@ -205,6 +265,23 @@ export default function Home() {
             </div>
           </div>
         ))}
+
+        {/* #6: 情绪速选标签 */}
+        {showChips && (
+          <div style={styles.chipsRow}>
+            {EMOTION_CHIPS.map((chip, i) => (
+              <button
+                key={i}
+                style={styles.chip}
+                onClick={() => handleChipClick(chip.text)}
+                disabled={loading}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div ref={chatEndRef} />
       </main>
 
@@ -377,15 +454,79 @@ const styles = {
     width: '100%',
     backdropFilter: 'blur(6px)',
   },
+  supportBubble: {
+    border: '1px solid rgba(232,117,154,0.35)',
+    background: 'rgba(255,247,249,0.85)',
+  },
   msgText: {
     margin: 0,
     whiteSpace: 'pre-wrap',
   },
-  pulseDot: {
-    marginLeft: '6px',
-    fontSize: '10px',
-    color: '#c8a2e0',
-    animation: 'pulse 1.2s infinite ease-in-out',
+  // #5: 呼吸光晕 loading 动画
+  breatheWrap: {
+    position: 'relative',
+    width: '40px',
+    height: '40px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '4px 0',
+  },
+  breatheOuter: {
+    position: 'absolute',
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(200,162,224,0.5), transparent 70%)',
+    animation: 'breatheOuter 2.4s ease-in-out infinite',
+  },
+  breatheInner: {
+    position: 'absolute',
+    width: '18px',
+    height: '18px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #e8759a, #9d5fc7)',
+    animation: 'breathe 2.4s ease-in-out infinite',
+  },
+  // #7: 求助资源卡片
+  resourceCard: {
+    marginTop: '12px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: 'rgba(255,255,255,0.7)',
+    border: '1px solid rgba(232,117,154,0.25)',
+  },
+  resourceTitle: {
+    margin: '0 0 8px 0',
+    fontSize: '13.5px',
+    fontWeight: '600',
+    color: '#8a4f6a',
+  },
+  resourceLine: {
+    margin: '4px 0',
+    fontSize: '13px',
+    color: '#5c4f66',
+    lineHeight: '1.5',
+  },
+  resourceRegion: {
+    fontWeight: '600',
+  },
+  // #6: 情绪速选标签
+  chipsRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px',
+    marginTop: '4px',
+  },
+  chip: {
+    background: 'rgba(255,255,255,0.7)',
+    border: '1px solid rgba(0,0,0,0.06)',
+    borderRadius: '20px',
+    padding: '9px 16px',
+    fontSize: '13.5px',
+    color: '#4a3f5c',
+    cursor: 'pointer',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
   },
   previewCard: {
     marginTop: '14px',
@@ -528,52 +669,4 @@ const styles = {
   favoriteItem: {
     background: 'rgba(255,255,255,0.6)',
     borderRadius: '14px',
-    overflow: 'hidden',
-    border: '1px solid rgba(255,255,255,0.8)',
-  },
-  favoritePreview: {
-    height: '160px',
-    overflow: 'hidden',
-    borderBottom: '1px solid rgba(0,0,0,0.05)',
-  },
-  favoriteIframe: {
-    width: '100%',
-    height: '100%',
-    border: 'none',
-    pointerEvents: 'none',
-  },
-  favoriteInfo: {
-    padding: '12px 14px',
-  },
-  favoritePrompt: {
-    fontSize: '13.5px',
-    color: '#4a3f5c',
-    margin: '0 0 10px 0',
-    lineHeight: '1.4',
-  },
-  favoriteActions: {
-    display: 'flex',
-    gap: '8px',
-  },
-  openBtn: {
-    flex: 1,
-    background: 'linear-gradient(135deg, #e8759a, #9d5fc7)',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '7px 0',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(157,95,199,0.35)',
-  },
-  removeBtn: {
-    background: 'transparent',
-    border: '1px solid rgba(0,0,0,0.08)',
-    borderRadius: '8px',
-    padding: '7px 12px',
-    fontSize: '13px',
-    color: '#8a7ea3',
-    cursor: 'pointer',
-  },
-};
+    overflow:

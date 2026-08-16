@@ -1,3 +1,5 @@
+import { createSupabaseServerClient } from '../../lib/supabaseServer';
+
 const rateLimitStore = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 8;
@@ -5,16 +7,11 @@ const RATE_LIMIT_MAX_REQUESTS = 8;
 function checkRateLimit(ip) {
   const now = Date.now();
   const record = rateLimitStore.get(ip);
-
   if (!record || now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
     rateLimitStore.set(ip, { windowStart: now, count: 1 });
     return true;
   }
-
-  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
-    return false;
-  }
-
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) return false;
   record.count += 1;
   return true;
 }
@@ -41,53 +38,35 @@ function getStaticFallback() {
 
 const SYSTEM_PROMPT = `You are a warm, emotionally attuned companion inside "Sanctuary" — a quiet space where people can talk about how they feel.
 
-For EVERY user message, decide which of THREE modes fits, then respond with that mode and content.
+For EVERY user message, decide which of THREE modes fits, then respond with that mode, content, and a moodTag.
 
-—— MODE "support" (highest priority — check this FIRST, before anything else) ——
-Use this ONLY when the user's message contains clear signals of a mental health crisis: suicidal thoughts or intent, self-harm (current, planned, or in progress), feeling unsafe, or explicit statements of wanting to die or hurt themselves. This is a narrow, serious category — do NOT use it for ordinary sadness, stress, loneliness, or a bad day. When genuinely unsure whether this applies, prefer "chat" or "experience" instead — only use "support" when the signal is clear.
-content = a short (2-4 sentences), warm, non-clinical response that acknowledges what they shared without judgment, gently encourages them to reach out to a real person (a crisis line, a trusted person, emergency services if in immediate danger), and does NOT try to solve or minimize what they're going through. Do not include phone numbers or links yourself — the app will attach verified resources separately. Do not ask probing questions about method or details.
+—— MODE "support" (highest priority — check this FIRST) ——
+Use this ONLY when the user's message contains clear signals of a mental health crisis: suicidal thoughts or intent, self-harm, feeling unsafe, or explicit statements of wanting to die or hurt themselves. Narrow category — do NOT use for ordinary sadness, stress, or a bad day. When unsure, prefer "chat" or "experience".
+content = a short (2-4 sentences), warm, non-clinical response acknowledging what they shared, gently encouraging them to reach out to a real person or crisis line. No phone numbers/links (the app attaches those separately). No probing questions about method or details.
 
-—— MODE "chat" (the default for everything else — use it most of the time) ——
-Use this for:
-- Greetings and small talk ("hi", "hello", "how are you")
-- Questions about you or the app ("who are you", "what can you do", "what is this")
-- Short acknowledgments ("ok", "thanks", "cool", "haha")
-- General statements that aren't really about the user's own emotional state ("nice weather today", "I'm bored")
-- Anything ambiguous or unclear
-content = a short, warm, natural reply in plain English text — no HTML, no markdown, 1-4 sentences. Just talk like a caring friend. Do NOT offer to build something unless it's clearly relevant.
+—— MODE "chat" (the default — use it most of the time) ——
+Use for greetings, small talk, questions about the app, short acknowledgments, general non-emotional statements, or anything ambiguous.
+content = a short, warm, natural reply in plain English text — no HTML, no markdown, 1-4 sentences.
 
-Examples that MUST be "chat":
-- "hi" → chat
-- "how's it going" → chat
-- "nice weather today" → chat
-- "what can you do" → chat
-- "lol ok" → chat
+Examples that MUST be "chat": "hi" · "how's it going" · "nice weather today" · "what can you do" · "lol ok"
 
-—— MODE "experience" (use sparingly — only for clear emotional expression or explicit build requests) ——
-Use this ONLY when the user:
-- States a specific feeling or emotional state that is NOT a crisis signal ("I feel overwhelmed today", "I'm anxious about tomorrow")
-- Expresses a wish, longing, or memory ("I miss the ocean", "I wish I could relax")
-- Explicitly asks you to build/make something ("make me a 2048 game", "build me something calming")
+—— MODE "experience" (use sparingly) ——
+Use ONLY when the user states a specific feeling/mood NOT a crisis signal, expresses a wish/longing/memory, or explicitly asks you to build/make something.
+content = a single-file, beautifully responsive, interactive HTML/CSS/JS page as a raw string — pure runnable HTML only, no markdown fences.
 
-Examples that MUST be "experience":
-- "I feel overwhelmed today" → experience
-- "I miss the ocean" → experience
-- "make me a 2048 game" → experience
-- "I need a quiet place to breathe" → experience
-
-content = a single-file, beautifully responsive, interactive HTML/CSS/JS page as a raw string — pure runnable HTML only, no markdown fences, no escaped-looking wrapper beyond normal JSON string escaping.
+Examples that MUST be "experience": "I feel overwhelmed today" · "I miss the ocean" · "make me a 2048 game" · "I need a quiet place to breathe"
 
 STRICT RULES FOR "experience" CONTENT:
-1. Soft, modern, aesthetically pleasing design using Tailwind CDN (<script src="https://cdn.tailwindcss.com"></script>).
-2. All in-page text must be in ENGLISH.
-3. Include genuine interactivity (clickable animations, taps, drags, a mini game, or an interactive breather/wish jar).
-4. If the user asks for a specific interactive game (e.g. 2048, tic-tac-toe), the game logic MUST actually work: keyboard AND on-screen/touch controls both required (never rely on keydown alone), and the full script must be complete and syntactically valid — do not truncate.
+1. Soft, modern design using Tailwind CDN (<script src="https://cdn.tailwindcss.com"></script>).
+2. All in-page text in ENGLISH.
+3. Genuine interactivity (clickable animations, taps, drags, mini game, or interactive breather/wish jar).
+4. For requested games (2048, tic-tac-toe, etc.): logic MUST actually work — keyboard AND on-screen/touch controls both required, complete and syntactically valid, never truncated.
 5. Never wrap in markdown fences.
-6. CRITICAL for any keyboard-controlled content (games like 2048, snake, etc.):
-   - Set <html> and <body> to overflow: hidden and height: 100% / margin: 0 so the page NEVER scrolls, regardless of content size.
-   - In the keydown event listener, call event.preventDefault() for ArrowUp/ArrowDown/ArrowLeft/ArrowRight (and Space if used) BEFORE any game logic, to stop the browser's native page-scroll behavior from hijacking the input.
-   - Size the game board with relative/viewport units (vh/vw or 100%) so it always fits within the visible area without needing to scroll to see any part of it.
-7. VARIETY: Look at the conversation history provided. If earlier "experience" content in this conversation used a particular color palette, visual motif (e.g. stars, waves, floating particles), or interaction pattern, deliberately choose a DIFFERENT palette, motif, and interaction style this time, so the experience feels fresh rather than repetitive — while still matching the emotional tone of the current message.
+6. For any keyboard-controlled content: set <html>/<body> to overflow:hidden, height:100%, margin:0 so the page never scrolls; call event.preventDefault() on arrow keys/space in the keydown listener BEFORE game logic; size the board with vh/vw or % units so it always fits without scrolling.
+7. VARIETY: check conversation history — if earlier experience content used a certain palette/motif/interaction style, deliberately choose a different one this time so it doesn't feel repetitive, while still matching the current emotional tone.
+
+—— moodTag (required for every mode) ——
+A short 1-4 word label capturing the emotional theme of THIS message, e.g. "overwhelmed", "missing someone", "anxious about work", "lonely at night". Use "neutral" for plain chat with no real emotional content. Always in English, lowercase, no punctuation.
 
 Use conversation history for context — if the user says "make it gentler" or "again but blue", refer back to what was discussed before.`;
 
@@ -95,13 +74,11 @@ const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     mode: { type: "STRING", enum: ["chat", "experience", "support"] },
-    content: {
-      type: "STRING",
-      description: "The reply text (chat/support mode) or full HTML page source (experience mode)"
-    }
+    content: { type: "STRING", description: "Reply text (chat/support) or full HTML page source (experience)" },
+    moodTag: { type: "STRING", description: "Short 1-4 word emotional theme label, or 'neutral'" }
   },
-  required: ["mode", "content"],
-  propertyOrdering: ["mode", "content"]
+  required: ["mode", "content", "moodTag"],
+  propertyOrdering: ["mode", "content", "moodTag"]
 };
 
 function isRetryableStatus(status) {
@@ -110,7 +87,6 @@ function isRetryableStatus(status) {
 
 async function callGeminiOnce(apiKey, contents) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey.trim()}`;
-
   const apiRes = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -118,7 +94,7 @@ async function callGeminiOnce(apiKey, contents) {
       system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents,
       generationConfig: {
-        temperature: 0.5, // 略微调高，给 #8 风格轮换留一点创造空间，同时保持mode判断相对稳定
+        temperature: 0.5,
         maxOutputTokens: 16384,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA
@@ -140,7 +116,6 @@ async function callGeminiOnce(apiKey, contents) {
     const finishReason = data.candidates?.[0]?.finishReason;
     const err = new Error(finishReason === 'SAFETY' ? 'blocked_by_safety' : 'empty_response');
     err.status = 502;
-    err.finishReason = finishReason;
     throw err;
   }
 
@@ -164,26 +139,16 @@ async function callGeminiOnce(apiKey, contents) {
 
 async function callGeminiWithRetry(apiKey, contents, maxAttempts = 3) {
   let lastError;
-
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await callGeminiOnce(apiKey, contents);
     } catch (err) {
       lastError = err;
-
       const retryable = isRetryableStatus(err.status) || err.message === 'malformed_json' || err.message === 'empty_response';
-      const isLastAttempt = attempt === maxAttempts;
-
-      if (!retryable || isLastAttempt) {
-        throw err;
-      }
-
-      const backoffMs = 500 * attempt;
-      console.warn(`Gemini call failed (attempt ${attempt}/${maxAttempts}): ${err.message}. Retrying in ${backoffMs}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      if (!retryable || attempt === maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
     }
   }
-
   throw lastError;
 }
 
@@ -198,9 +163,7 @@ export default async function handler(req, res) {
   }
 
   const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
-    .toString()
-    .split(',')[0]
-    .trim();
+    .toString().split(',')[0].trim();
 
   cleanupRateLimitStore();
 
@@ -215,11 +178,43 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
+  // 如果带了登录用户的token，用数据库里的真实历史记录（跨设备一致），
+  // 否则退回到前端传来的临时history（访客模式）
+  const authHeader = req.headers['authorization'] || '';
+  const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  let userId = null;
+  let dbHistory = null;
+  let supabaseServer = null;
+
+  if (accessToken) {
+    try {
+      supabaseServer = createSupabaseServerClient(accessToken);
+      const { data: userData } = await supabaseServer.auth.getUser(accessToken);
+      userId = userData?.user?.id || null;
+
+      if (userId) {
+        const { data: rows } = await supabaseServer
+          .from('mood_logs')
+          .select('role, content, created_at')
+          .order('created_at', { ascending: false })
+          .limit(12);
+        if (rows) {
+          dbHistory = rows.reverse().map(r => ({ role: r.role, text: r.content }));
+        }
+      }
+    } catch (e) {
+      console.error('Supabase auth/history lookup failed (continuing as guest):', e.message);
+    }
+  }
+
+  const effectiveHistory = dbHistory || (Array.isArray(history) ? history : []);
+
   const contents = [
-    ...(Array.isArray(history) ? history.map(h => ({
+    ...effectiveHistory.map(h => ({
       role: h.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: h.text }]
-    })) : []),
+    })),
     { role: 'user', parts: [{ text: prompt }] }
   ];
 
@@ -232,23 +227,36 @@ export default async function handler(req, res) {
       if (content.startsWith('```')) {
         content = content.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
       }
-
       const antiScrollCSS = `<style>html,body{overflow:hidden!important;height:100%!important;margin:0!important;padding:0!important;}</style>`;
-      if (content.includes('</head>')) {
-        content = content.replace('</head>', `${antiScrollCSS}</head>`);
-      } else {
-        content = antiScrollCSS + content;
-      }
+      content = content.includes('</head>')
+        ? content.replace('</head>', `${antiScrollCSS}</head>`)
+        : antiScrollCSS + content;
     }
 
-    return res.status(200).json({ mode: parsed.mode, content });
+    // 登录用户：把这轮对话存进mood_logs，供下次"记忆"和未来情绪趋势用。
+    // 存的是文字内容，experience模式不存整段HTML(那个交给favorites表，用户主动收藏才存)
+    if (userId && supabaseServer) {
+      const assistantContentToStore = parsed.mode === 'experience'
+        ? '[created a space]'
+        : content;
+
+      supabaseServer.from('mood_logs').insert([
+        { user_id: userId, role: 'user', mode: null, content: prompt, mood_tag: parsed.moodTag },
+        { user_id: userId, role: 'assistant', mode: parsed.mode, content: assistantContentToStore, mood_tag: parsed.moodTag }
+      ]).then(({ error }) => {
+        if (error) console.error('Failed to save mood_logs:', error.message);
+      });
+      // 故意不 await —— 存历史不应该拖慢用户看到回复的速度，失败了也不影响主流程
+    }
+
+    return res.status(200).json({ mode: parsed.mode, content, moodTag: parsed.moodTag });
 
   } catch (error) {
     console.error('Generation Error after retries:', error.message, error.status || '');
-
     return res.status(200).json({
       mode: 'chat',
       content: getStaticFallback(),
+      moodTag: 'neutral',
       _fallback: true
     });
   }

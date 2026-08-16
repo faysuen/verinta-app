@@ -1,9 +1,6 @@
-// ⚠️ 简易内存限流：仅适用于低流量/单实例场景。
-// Vercel Serverless 在高并发下会启动多个实例，这个 Map 不会在实例间共享，
-// 限流效果会打折扣。真正要用于生产环境防滥用，建议换成 Upstash Redis。
 const rateLimitStore = new Map();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分钟窗口
-const RATE_LIMIT_MAX_REQUESTS = 8; // 每个IP每分钟最多8次请求
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 8;
 
 function checkRateLimit(ip) {
   const now = Date.now();
@@ -32,7 +29,6 @@ function cleanupRateLimitStore() {
   }
 }
 
-// 完全不依赖模型调用的静态安抚语——用于Gemini重试多次仍失败的兜底场景
 const STATIC_FALLBACK_MESSAGES = [
   "I'm having a little trouble reaching my thoughts right now, but I'm still here with you. Would you like to try telling me again in a moment?",
   "Something's not quite connecting on my end. Take a breath with me — and if you'd like, try again shortly.",
@@ -45,9 +41,13 @@ function getStaticFallback() {
 
 const SYSTEM_PROMPT = `You are a warm, emotionally attuned companion inside "Sanctuary" — a quiet space where people can talk about how they feel.
 
-DEFAULT TO "chat" MODE. Only switch to "experience" mode when the user's message clearly expresses a specific feeling, mood, wish, or memory — or explicitly asks you to build/make/create something. When in doubt, choose "chat".
+For EVERY user message, decide which of THREE modes fits, then respond with that mode and content.
 
-—— MODE "chat" (this is the default — use it most of the time) ——
+—— MODE "support" (highest priority — check this FIRST, before anything else) ——
+Use this ONLY when the user's message contains clear signals of a mental health crisis: suicidal thoughts or intent, self-harm (current, planned, or in progress), feeling unsafe, or explicit statements of wanting to die or hurt themselves. This is a narrow, serious category — do NOT use it for ordinary sadness, stress, loneliness, or a bad day. When genuinely unsure whether this applies, prefer "chat" or "experience" instead — only use "support" when the signal is clear.
+content = a short (2-4 sentences), warm, non-clinical response that acknowledges what they shared without judgment, gently encourages them to reach out to a real person (a crisis line, a trusted person, emergency services if in immediate danger), and does NOT try to solve or minimize what they're going through. Do not include phone numbers or links yourself — the app will attach verified resources separately. Do not ask probing questions about method or details.
+
+—— MODE "chat" (the default for everything else — use it most of the time) ——
 Use this for:
 - Greetings and small talk ("hi", "hello", "how are you")
 - Questions about you or the app ("who are you", "what can you do", "what is this")
@@ -65,7 +65,7 @@ Examples that MUST be "chat":
 
 —— MODE "experience" (use sparingly — only for clear emotional expression or explicit build requests) ——
 Use this ONLY when the user:
-- States a specific feeling or emotional state ("I feel overwhelmed today", "I'm anxious about tomorrow")
+- States a specific feeling or emotional state that is NOT a crisis signal ("I feel overwhelmed today", "I'm anxious about tomorrow")
 - Expresses a wish, longing, or memory ("I miss the ocean", "I wish I could relax")
 - Explicitly asks you to build/make something ("make me a 2048 game", "build me something calming")
 
@@ -87,16 +87,17 @@ STRICT RULES FOR "experience" CONTENT:
    - Set <html> and <body> to overflow: hidden and height: 100% / margin: 0 so the page NEVER scrolls, regardless of content size.
    - In the keydown event listener, call event.preventDefault() for ArrowUp/ArrowDown/ArrowLeft/ArrowRight (and Space if used) BEFORE any game logic, to stop the browser's native page-scroll behavior from hijacking the input.
    - Size the game board with relative/viewport units (vh/vw or 100%) so it always fits within the visible area without needing to scroll to see any part of it.
+7. VARIETY: Look at the conversation history provided. If earlier "experience" content in this conversation used a particular color palette, visual motif (e.g. stars, waves, floating particles), or interaction pattern, deliberately choose a DIFFERENT palette, motif, and interaction style this time, so the experience feels fresh rather than repetitive — while still matching the emotional tone of the current message.
 
 Use conversation history for context — if the user says "make it gentler" or "again but blue", refer back to what was discussed before.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    mode: { type: "STRING", enum: ["chat", "experience"] },
+    mode: { type: "STRING", enum: ["chat", "experience", "support"] },
     content: {
       type: "STRING",
-      description: "The reply text (chat mode) or full HTML page source (experience mode)"
+      description: "The reply text (chat/support mode) or full HTML page source (experience mode)"
     }
   },
   required: ["mode", "content"],
@@ -117,7 +118,7 @@ async function callGeminiOnce(apiKey, contents) {
       system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents,
       generationConfig: {
-        temperature: 0.4, // 调低，让 chat/experience 判断更稳定
+        temperature: 0.5, // 略微调高，给 #8 风格轮换留一点创造空间，同时保持mode判断相对稳定
         maxOutputTokens: 16384,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA
@@ -232,8 +233,6 @@ export default async function handler(req, res) {
         content = content.replace(/^```(?:html)?\n?/, '').replace(/\n?```$/, '');
       }
 
-      // 保险丝：无论模型有没有自己处理好防滚动，强制注入CSS兜底，
-      // 防止方向键控制类内容因为出现滚动条而"按了没反应"
       const antiScrollCSS = `<style>html,body{overflow:hidden!important;height:100%!important;margin:0!important;padding:0!important;}</style>`;
       if (content.includes('</head>')) {
         content = content.replace('</head>', `${antiScrollCSS}</head>`);

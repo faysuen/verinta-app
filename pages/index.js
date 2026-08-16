@@ -525,4 +525,53 @@ const styles = {
     gap: '16px',
   },
   favoriteItem: {
-    background:
+    background: 'rgba(255,255,255,0.6)',
+    borderRadius: '14px',
+    overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,0.8)',
+  },
+  favoritePreview: {
+    height: '160px',
+    overflow: 'hidden',
+    borderBottom: '1px solid rgba(0,0,0,0.05)',
+  },
+  favoriteIframe: {
+    width: '100%',
+    height: '100%',
+    border: 'none',
+    pointerEvents: 'none', // 缩略图不可交互，只做预览
+  },
+  favoriteInfo: {
+    padding: '12px 14px',
+  },
+  favoritePrompt: {
+    fontSize: '13.5px',
+    color: '#4a3f5c',
+    margin: '0 0 10px 0',
+    lineHeight: '1.4',
+  },
+  favoriteActions: {
+    display: 'flex',
+    gap: '8px',
+  },
+  openBtn: {
+    flex: 1,
+    background: 'linear-gradient(135deg, #f5b7c4, #c8a2e0)',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '7px 0',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  removeBtn: {
+    background: 'transparent',
+    border: '1px solid rgba(0,0,0,0.08)',
+    borderRadius: '8px',
+    padding: '7px 12px',
+    fontSize: '13px',
+    color: '#8a7ea3',
+    cursor: 'pointer',
+  },
+};

@@ -24,7 +24,6 @@ export default function Home() {
     scrollToBottom();
   }, [messages, loading]);
 
-  // 启动时读取本地收藏
   useEffect(() => {
     try {
       const stored = localStorage.getItem(FAVORITES_KEY);
@@ -409,18 +408,19 @@ const styles = {
   },
   saveBtn: {
     background: 'transparent',
-    border: '1px solid rgba(200,162,224,0.5)',
+    border: '1px solid rgba(157,95,199,0.5)',
     borderRadius: '8px',
     padding: '6px 12px',
     fontSize: '13px',
     fontWeight: '600',
-    color: '#a074b5',
+    color: '#8a4fb0',
     cursor: 'pointer',
   },
   saveBtnActive: {
-    background: 'linear-gradient(135deg, #f5b7c4, #c8a2e0)',
+    background: 'linear-gradient(135deg, #e8759a, #9d5fc7)',
     color: '#ffffff',
     border: 'none',
+    boxShadow: '0 2px 8px rgba(157,95,199,0.35)',
   },
   inputArea: {
     padding: '18px 24px',
@@ -451,7 +451,7 @@ const styles = {
     fontFamily: 'inherit',
   },
   sendBtn: {
-    background: 'linear-gradient(135deg, #f5b7c4, #c8a2e0)',
+    background: 'linear-gradient(135deg, #e8759a, #9d5fc7)',
     color: '#ffffff',
     border: 'none',
     borderRadius: '10px',
@@ -459,6 +459,7 @@ const styles = {
     fontWeight: '600',
     fontSize: '14px',
     cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(157,95,199,0.35)',
   },
   drawerOverlay: {
     position: 'fixed',
@@ -539,7 +540,7 @@ const styles = {
     width: '100%',
     height: '100%',
     border: 'none',
-    pointerEvents: 'none', // 缩略图不可交互，只做预览
+    pointerEvents: 'none',
   },
   favoriteInfo: {
     padding: '12px 14px',
@@ -556,7 +557,7 @@ const styles = {
   },
   openBtn: {
     flex: 1,
-    background: 'linear-gradient(135deg, #f5b7c4, #c8a2e0)',
+    background: 'linear-gradient(135deg, #e8759a, #9d5fc7)',
     color: '#ffffff',
     border: 'none',
     borderRadius: '8px',
@@ -564,6 +565,7 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(157,95,199,0.35)',
   },
   removeBtn: {
     background: 'transparent',
